@@ -1,6 +1,6 @@
 # Human analytics priorities
 
-**Decision status:** candidate product priorities, before implementation  
+**Decision status:** first deterministic statistical slice implemented
 **Audience:** the person whose Codex history is being analyzed  
 **Evidence:** [observed rollout event inventory](evidence/2026-08-16-observed-codex-rollout-event-inventory.md)
 
@@ -100,7 +100,8 @@ For human analytics:
 1. Partition token records by session and counter epoch.
 2. Derive positive component-wise deltas from `info.total_token_usage`.
 3. Ignore repeated zero-delta snapshots.
-4. Start a new epoch when a cumulative component decreases.
+4. Start a new epoch when cumulative total tokens decrease, falling back to the
+   input/output counters when a total is absent.
 5. Attach each delta to the active turn.
 6. Reconcile per-turn totals back to each session/epoch total.
 
