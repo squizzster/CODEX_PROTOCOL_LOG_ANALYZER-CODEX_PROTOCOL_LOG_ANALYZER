@@ -48,6 +48,10 @@ with CodexProtocolLibrary("runtime/codex-protocol.sqlite3") as library:
             protocol_id,
             include=["turns", "token_usage", "command_zero_exit_rate_percent"],
         )
+        bulk_turns = library.get_stats(protocol_id, include_turn_statistics=True)
+        exact_turn = library.get_turn_stats(
+            protocol_id, "turn-1", session_id="codex-session-id"
+        )
 ```
 
 The lifecycle methods are:
@@ -61,6 +65,11 @@ The lifecycle methods are:
   invalid or out-of-order members.
 - `get_stats(protocol_id)` returns every current statistic at one consistent revision.
 - `get_stats(protocol_id, include=[...])` returns only named statistics or categories.
+- `get_stats(protocol_id, include_turn_statistics=True)` also returns every keyed turn
+  projection calculated in that same chronological pass.
+- `get_turn_stats(protocol_id, turn_id, session_id=None)` selects one exact turn after
+  full-dataset analysis. Supply `session_id` when the same turn ID exists in more than
+  one source; missing and ambiguous identities return structured error diagnostics.
 - `get_available_stats()` declares the current selectable vocabulary.
 - `get_protocol`, `list_protocols`, and `list_sources` expose metadata and provenance.
 
@@ -88,6 +97,7 @@ not parse exception text.
 
 Diagnostic codes are stable machine-facing categories. Current codes include
 `new_event_type`, `malformed_json`, `invalid_event`, `event_out_of_order`,
+`turn_id_not_found`, `turn_id_ambiguous`,
 `protocol_id_not_found`, `unknown_statistic`, `source_not_found`, `storage_error`,
 `io_error`, `library_closed`, and `internal_error`.
 
