@@ -62,6 +62,11 @@ Official format references:
 - [Codex non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode#make-output-machine-readable)
 - [Codex app-server events](https://learn.chatgpt.com/docs/app-server#events)
 
+Product direction and evidence:
+
+- [Human analytics priorities](docs/HUMAN_ANALYTICS_PRIORITIES.md)
+- [Observed rollout event inventory](docs/evidence/2026-08-16-observed-codex-rollout-event-inventory.md)
+
 ## Development
 
 ```bash
