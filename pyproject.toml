@@ -1,7 +1,7 @@
 [project]
 name = "codex-protocol-log-analyzer"
-version = "0.1.0"
-description = "Inspect Codex CLI and app-server protocol event logs"
+version = "0.2.0"
+description = "Persist and analyze Codex protocol event histories"
 readme = "README.md"
 authors = [
     { name = "Mark", email = "squizzster@gmail.com" }
@@ -12,6 +12,7 @@ dependencies = []
 [project.scripts]
 codex-log-analyze = "codex_protocol_log_analyzer.cli:main"
 codex-log-stats = "codex_protocol_log_analyzer.statistics_cli:main"
+codex-protocol = "codex_protocol_log_analyzer.library_cli:main"
 
 [dependency-groups]
 dev = [

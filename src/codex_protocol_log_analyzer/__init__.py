@@ -2,18 +2,54 @@
 
 from .analysis import AnalysisReport, Diagnostic, analyze_file, analyze_files, analyze_lines
 from .events import ProtocolEvent, ProtocolLogDecodeError, parse_protocol_line
-from .statistics import StatisticalReport, analyze_rollout_files, render_markdown
+from .library import (
+    AddEventsResult,
+    CodexProtocolLibrary,
+    CodexProtocolLibraryError,
+    InvalidProtocolEventError,
+    InvalidProtocolLogError,
+    LibraryDiagnostic,
+    LoadedSource,
+    LoadFileResult,
+    OperationResult,
+    ProtocolDataset,
+    ProtocolEventInput,
+    ProtocolIdNotFoundError,
+    StatsSnapshot,
+    UnknownStatisticError,
+)
+from .statistics import (
+    StatisticalReport,
+    analyze_rollout_files,
+    analyze_rollout_record_sources,
+    render_markdown,
+)
 
 __all__ = [
+    "AddEventsResult",
     "AnalysisReport",
+    "CodexProtocolLibrary",
+    "CodexProtocolLibraryError",
     "Diagnostic",
+    "InvalidProtocolEventError",
+    "InvalidProtocolLogError",
+    "LibraryDiagnostic",
+    "LoadFileResult",
+    "LoadedSource",
+    "OperationResult",
+    "ProtocolDataset",
     "ProtocolEvent",
+    "ProtocolEventInput",
+    "ProtocolIdNotFoundError",
     "ProtocolLogDecodeError",
     "StatisticalReport",
+    "StatsSnapshot",
+    "UnknownStatisticError",
     "analyze_file",
     "analyze_files",
     "analyze_lines",
     "analyze_rollout_files",
+    "analyze_rollout_record_sources",
     "parse_protocol_line",
     "render_markdown",
 ]

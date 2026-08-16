@@ -7,6 +7,7 @@ import json
 import math
 import shlex
 from collections import Counter
+from collections.abc import Iterable, Mapping
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -64,6 +65,18 @@ def analyze_rollout_files(paths: list[str | Path]) -> StatisticalReport:
     return analyzer.report(source=f"{len(log_paths)} rollout files")
 
 
+def analyze_rollout_record_sources(
+    sources: Iterable[tuple[str, Iterable[Mapping[str, Any]]]],
+    *,
+    source_description: str = "rollout record sources",
+) -> StatisticalReport:
+    """Analyze named in-memory sources through the same pipeline used for files."""
+    analyzer = _StatisticalAnalyzer()
+    for source_name, records in sources:
+        analyzer.consume_records(source_name, records)
+    return analyzer.report(source=source_description)
+
+
 class _StatisticalAnalyzer:
     def __init__(self) -> None:
         self.sessions: set[str] = set()
@@ -108,33 +121,44 @@ class _StatisticalAnalyzer:
         self.sequence = 0
 
     def consume_file(self, path: Path) -> None:
-        source_key = f"source:{_digest(str(path.resolve()))}"
+        def parsed_records() -> Iterable[dict[str, Any]]:
+            with path.open(encoding="utf-8") as lines:
+                for line in lines:
+                    if not line.strip():
+                        continue
+                    try:
+                        record = json.loads(line)
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        self.malformed_lines += 1
+                        continue
+                    if not isinstance(record, dict):
+                        self.malformed_lines += 1
+                        continue
+                    yield record
+
+        self.consume_records(str(path.resolve()), parsed_records())
+
+    def consume_records(
+        self, source_name: str, records: Iterable[Mapping[str, Any]]
+    ) -> None:
+        """Consume one ordered source without leaking active state into the next."""
+        source_key = f"source:{_digest(source_name)}"
         session = source_key
         self.sessions.add(session)
         self.active_turn.pop(session, None)
-        with path.open(encoding="utf-8") as lines:
-            for line in lines:
-                if not line.strip():
-                    continue
-                try:
-                    record = json.loads(line)
-                except (json.JSONDecodeError, UnicodeDecodeError):
-                    self.malformed_lines += 1
-                    continue
-                if not isinstance(record, dict):
-                    self.malformed_lines += 1
-                    continue
-                self.records += 1
-                self.sequence += 1
-                payload = _mapping(record.get("payload"))
-                if record.get("type") == "session_meta":
-                    identifier = _text(payload.get("id"))
-                    if identifier:
-                        self.sessions.discard(source_key)
-                        session = identifier
-                        self.sessions.add(session)
-                    continue
-                self._consume(record, payload, session)
+        for supplied_record in records:
+            record = dict(supplied_record)
+            self.records += 1
+            self.sequence += 1
+            payload = _mapping(record.get("payload"))
+            if record.get("type") == "session_meta":
+                identifier = _text(payload.get("id"))
+                if identifier:
+                    self.sessions.discard(source_key)
+                    session = identifier
+                    self.sessions.add(session)
+                continue
+            self._consume(record, payload, session)
         self.active_turn.pop(session, None)
 
     def _consume(
