@@ -36,6 +36,7 @@ def test_malformed_and_unknown_lines_remain_visible() -> None:
     assert report.event_count == 2
     assert report.malformed_line_count == 1
     assert report.unknown_event_count == 1
+    assert report.unrecognized_event_count == 1
     assert report.diagnostics[0].line_number == 2
     assert report.diagnostics[0].raw_excerpt == "not-json"
 
@@ -46,3 +47,14 @@ def test_started_item_without_terminal_event_is_reported_as_open() -> None:
     )
 
     assert report.open_item_ids == ("call-7",)
+
+
+def test_unrecognized_rollout_events_are_streamed_to_callback() -> None:
+    observed = []
+    report = analyze_lines(
+        ['{"timestamp":"2026-08-16T00:00:00Z","type":"world_state","payload":{}}'],
+        on_unrecognized=observed.append,
+    )
+
+    assert report.unrecognized_event_names == {"world_state": 1}
+    assert [event.name for event in observed] == ["world_state"]

@@ -6,7 +6,36 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal
 
-ProtocolFamily = Literal["app-server", "exec", "unknown"]
+ProtocolFamily = Literal["app-server", "exec", "rollout", "unknown"]
+
+_EXEC_EVENT_NAMES = frozenset(
+    {
+        "error",
+        "thread.started",
+        "turn.started",
+        "turn.completed",
+        "turn.failed",
+    }
+)
+_ROLLOUT_EVENT_MESSAGE_TYPES = frozenset(
+    {
+        "task_started",
+        "task_complete",
+        "token_count",
+        "turn_aborted",
+    }
+)
+_ROLLOUT_RESPONSE_ITEM_TYPES = frozenset(
+    {
+        "agent_message",
+        "custom_tool_call",
+        "custom_tool_call_output",
+        "function_call",
+        "function_call_output",
+        "message",
+        "reasoning",
+    }
+)
 
 
 class ProtocolLogDecodeError(ValueError):
@@ -27,6 +56,7 @@ class ProtocolEvent:
     item_type: str | None
     status: str | None
     usage: dict[str, int]
+    recognized: bool
     raw: dict[str, Any]
 
 
@@ -49,6 +79,8 @@ def parse_protocol_line(line: str, *, line_number: int = 1) -> ProtocolEvent:
     event_type = raw.get("type")
     if isinstance(method, str):
         return _from_app_server(raw, method, line_number)
+    if isinstance(event_type, str) and _is_rollout(raw):
+        return _from_rollout(raw, event_type, line_number)
     if isinstance(event_type, str):
         return _from_exec(raw, event_type, line_number)
     return ProtocolEvent(
@@ -62,6 +94,7 @@ def parse_protocol_line(line: str, *, line_number: int = 1) -> ProtocolEvent:
         item_type=None,
         status=_string(raw.get("status")),
         usage=_numeric_usage(raw.get("usage")),
+        recognized=False,
         raw=raw,
     )
 
@@ -87,6 +120,8 @@ def _from_app_server(raw: dict[str, Any], method: str, line_number: int) -> Prot
             or _status_value(thread.get("status"))
         ),
         usage=_first_usage(raw, params, turn, thread),
+        recognized=method.startswith(("thread/", "turn/", "item/"))
+        or method in {"error", "warning", "serverRequest/resolved"},
         raw=raw,
     )
 
@@ -105,8 +140,56 @@ def _from_exec(raw: dict[str, Any], event_type: str, line_number: int) -> Protoc
         item_type=_string(item.get("type")),
         status=_string(item.get("status")) or _status_value(raw.get("status")),
         usage=_first_usage(raw, item),
+        recognized=event_type in _EXEC_EVENT_NAMES or event_type.startswith("item."),
         raw=raw,
     )
+
+
+def _is_rollout(raw: dict[str, Any]) -> bool:
+    return isinstance(raw.get("timestamp"), str) and isinstance(raw.get("payload"), dict)
+
+
+def _from_rollout(raw: dict[str, Any], record_type: str, line_number: int) -> ProtocolEvent:
+    payload = _mapping(raw.get("payload"))
+    payload_type = _string(payload.get("type"))
+    name = f"{record_type}.{payload_type}" if payload_type else record_type
+    info = _mapping(payload.get("info"))
+    usage = _numeric_usage(info.get("last_token_usage"))
+    return ProtocolEvent(
+        line_number=line_number,
+        family="rollout",
+        name=name,
+        lifecycle=_rollout_lifecycle(payload_type),
+        thread_id=(
+            _string(payload.get("session_id"))
+            or (_string(payload.get("id")) if record_type == "session_meta" else None)
+        ),
+        turn_id=_string(payload.get("turn_id")),
+        item_id=_string(payload.get("id")) or _string(payload.get("call_id")),
+        item_type=payload_type if record_type == "response_item" else None,
+        status=_status_value(payload.get("status")),
+        usage=usage,
+        recognized=_recognized_rollout(record_type, payload_type),
+        raw=raw,
+    )
+
+
+def _rollout_lifecycle(payload_type: str | None) -> str | None:
+    if payload_type in {"task_started", "patch_apply_begin"}:
+        return "started"
+    if payload_type in {"task_complete", "patch_apply_end", "turn_aborted"}:
+        return "completed"
+    return None
+
+
+def _recognized_rollout(record_type: str, payload_type: str | None) -> bool:
+    if record_type in {"session_meta", "turn_context"}:
+        return True
+    if record_type == "event_msg":
+        return payload_type in _ROLLOUT_EVENT_MESSAGE_TYPES
+    if record_type == "response_item":
+        return payload_type in _ROLLOUT_RESPONSE_ITEM_TYPES
+    return False
 
 
 def _mapping(value: Any) -> dict[str, Any]:

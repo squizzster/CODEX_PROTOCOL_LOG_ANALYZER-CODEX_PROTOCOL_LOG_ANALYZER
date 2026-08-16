@@ -41,6 +41,28 @@ def test_app_server_thread_started_reads_nested_thread_identity() -> None:
     assert event.thread_id == "thr_123"
 
 
+def test_rollout_envelope_is_not_misclassified_as_exec() -> None:
+    event = parse_protocol_line(
+        '{"timestamp":"2026-08-16T00:00:00Z","type":"event_msg",'
+        '"payload":{"type":"task_started","turn_id":"turn-7"}}'
+    )
+
+    assert event.family == "rollout"
+    assert event.name == "event_msg.task_started"
+    assert event.lifecycle == "started"
+    assert event.turn_id == "turn-7"
+
+
+def test_rollout_token_count_uses_incremental_usage() -> None:
+    event = parse_protocol_line(
+        '{"timestamp":"2026-08-16T00:00:00Z","type":"event_msg",'
+        '"payload":{"type":"token_count","info":{"last_token_usage":'
+        '{"input_tokens":12,"output_tokens":3}}}}'
+    )
+
+    assert event.usage == {"input_tokens": 12, "output_tokens": 3}
+
+
 @pytest.mark.parametrize("line", ["[]", '"text"', "null", "{"])
 def test_non_object_or_invalid_json_is_rejected(line: str) -> None:
     with pytest.raises(ProtocolLogDecodeError):
