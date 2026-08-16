@@ -12,6 +12,7 @@ small command-line report.
 - `codex exec --json` events such as `thread.started`, `turn.completed`, and `item.*`.
 - Codex app-server lifecycle notifications such as `turn/started`, `item/completed`,
   and `thread/status/changed`.
+- Codex persisted rollout records with `{timestamp, type, payload}` envelopes.
 - Unrecognized JSON object shapes, retained as `unknown` events rather than discarded.
 
 The two protocol families are normalized into one small event contract but counted
@@ -24,6 +25,8 @@ rest of a capture.
 uv sync
 uv run codex-log-analyze capture.jsonl
 uv run codex-log-analyze capture.jsonl --format json
+uv run codex-log-analyze test_log_sources/*.jsonl \
+  --unrecognized-out artifacts/unrecognized-events.jsonl
 codex exec --json "inspect this repository" | uv run codex-log-analyze -
 ```
 
@@ -45,6 +48,10 @@ print(report.event_names)
 Reports include detected protocol families, event and item-type counts, statuses,
 token-usage totals, thread and turn identities, malformed-line diagnostics, and item
 IDs that were started but had no terminal event before the capture ended.
+
+Multiple paths are analyzed as one streaming corpus. `--unrecognized-out` writes every
+event outside the analyzer's explicit vocabulary as JSONL, including its raw payload,
+for the next evidence-led parser iteration.
 
 Open items are observations about the capture boundary, not claims that Codex left work
 running. Unknown records are preserved because Codex can add notification and item
