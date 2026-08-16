@@ -1,0 +1,34 @@
+[project]
+name = "codex-protocol-log-analyzer"
+version = "0.1.0"
+description = "Inspect Codex CLI and app-server protocol event logs"
+readme = "README.md"
+authors = [
+    { name = "Mark", email = "squizzster@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+codex-log-analyze = "codex_protocol_log_analyzer.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4",
+    "ruff>=0.12",
+]
+
+[tool.pytest.ini_options]
+addopts = "--strict-markers --strict-config"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 92
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[build-system]
+requires = ["uv_build>=0.12.1,<0.13.0"]
+build-backend = "uv_build"

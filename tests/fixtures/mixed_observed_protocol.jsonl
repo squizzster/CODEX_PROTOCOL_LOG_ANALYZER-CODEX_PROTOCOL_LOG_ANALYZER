@@ -1,0 +1,8 @@
+{"method":"turn/started","params":{"threadId":"thread-app","turn":{"id":"turn-app","status":"inProgress"}}}
+{"method":"item/started","params":{"threadId":"thread-app","turnId":"turn-app","item":{"id":"command-1","type":"commandExecution","status":"inProgress"}}}
+{"method":"item/completed","params":{"threadId":"thread-app","turnId":"turn-app","item":{"id":"command-1","type":"commandExecution","status":"completed"}}}
+{"type":"thread.started","thread_id":"thread-exec"}
+{"type":"turn.started"}
+{"type":"item.started","item":{"id":"item-1","type":"command_execution","command":"bash -lc ls","status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item-1","type":"command_execution","status":"completed"}}
+{"type":"turn.completed","usage":{"input_tokens":24763,"cached_input_tokens":24448,"output_tokens":122,"reasoning_output_tokens":0}}
