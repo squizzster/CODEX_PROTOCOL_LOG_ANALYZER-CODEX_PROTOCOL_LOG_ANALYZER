@@ -276,11 +276,111 @@ def test_turn_tokens_are_selected_after_the_session_baseline_is_reconciled(
     assert turn.recommended_insight_stats["cached_input_share_percent"] == 75.0
 
 
+def test_insight_rates_include_their_relational_base_counts(tmp_path: Path) -> None:
+    source = _write(
+        tmp_path / "insight-bases.jsonl",
+        [
+            _record("session_meta", {"id": "session"}, 0),
+            _record("event_msg", {"type": "task_started", "turn_id": "t1"}, 1),
+            _record(
+                "turn_context",
+                {"turn_id": "t1", "cwd": "/workspace/a"},
+                2,
+            ),
+            _record(
+                "event_msg",
+                {
+                    "type": "exec_command_end",
+                    "turn_id": "t1",
+                    "call_id": "command-1",
+                    "command": ["/bin/bash", "-lc", "pytest -q"],
+                    "exit_code": 0,
+                },
+                3,
+            ),
+            _record(
+                "event_msg",
+                {
+                    "type": "patch_apply_end",
+                    "turn_id": "t1",
+                    "call_id": "change-1",
+                    "changes": {"/workspace/a/file.py": {"type": "update"}},
+                },
+                4,
+            ),
+            _record("event_msg", {"type": "task_complete", "turn_id": "t1"}, 5),
+            _record("event_msg", {"type": "task_started", "turn_id": "t2"}, 6),
+            _record(
+                "turn_context",
+                {"turn_id": "t2", "cwd": "/workspace/a"},
+                7,
+            ),
+            _record(
+                "event_msg",
+                {
+                    "type": "exec_command_end",
+                    "turn_id": "t2",
+                    "call_id": "command-2",
+                    "command": ["/bin/bash", "-lc", "pytest -q"],
+                    "exit_code": 0,
+                },
+                8,
+            ),
+            _record(
+                "event_msg",
+                {
+                    "type": "patch_apply_end",
+                    "turn_id": "t2",
+                    "call_id": "change-2",
+                    "changes": {"/workspace/a/file.py": {"type": "update"}},
+                },
+                9,
+            ),
+            _record("event_msg", {"type": "task_complete", "turn_id": "t2"}, 10),
+            _record("event_msg", {"type": "task_started", "turn_id": "t3"}, 11),
+            _record(
+                "turn_context",
+                {"turn_id": "t3", "cwd": "/workspace/b"},
+                12,
+            ),
+            _record("event_msg", {"type": "task_complete", "turn_id": "t3"}, 13),
+        ],
+    )
+
+    insights = analyze_rollout_files([source]).recommended_insight_stats
+
+    assert insights["hands_on_turn_count"] == 2
+    assert insights["repeated_command_execution_count"] == 2
+    assert insights["exact_command_repeat_rate_percent"] == 100.0
+    assert insights["revisited_distinct_path_count"] == 1
+    assert insights["file_revisit_rate_percent"] == 100.0
+    assert insights["workspace_tagged_turn_count"] == 3
+    assert insights["turns_in_busiest_workspace_count"] == 2
+    assert insights["busiest_workspace_turn_share_percent"] == 66.7
+
+
 def test_empty_history_renders_na_and_cli_json(tmp_path: Path, capsys) -> None:
     source = _write(tmp_path / "empty.jsonl", [_record("session_meta", {"id": "s"}, 0)])
 
     report = analyze_rollout_files([source])
 
+    assert report.must_have_basic_stats["token_usage"] == {
+        "input_tokens": 0,
+        "cached_input_tokens": 0,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 0,
+        "reasoning_output_tokens": 0,
+        "total_tokens": 0,
+        "per_turn_total_tokens": {
+            "n": 0,
+            "total": 0,
+            "median": None,
+            "p75": None,
+            "p90": None,
+            "p95": None,
+            "max": None,
+        },
+    }
     assert "n/a (n=0)" in render_markdown(report)
     assert main([str(source), "--format", "json"]) == 0
     output = json.loads(capsys.readouterr().out)

@@ -666,6 +666,11 @@ class _StatisticalAnalyzer:
         repeated_commands = sum(
             count for count in self.command_hashes.values() if count > 1
         )
+        revisited_distinct_paths = sum(
+            count >= 2 for count in self.path_operation_counts.values()
+        )
+        workspace_tagged_turns = sum(self.workspaces.values())
+        turns_in_busiest_workspace = max(self.workspaces.values(), default=0)
         input_tokens = self.token_totals["input_tokens"]
         output_tokens = self.token_totals["output_tokens"]
         hour_counts = Counter(
@@ -686,7 +691,17 @@ class _StatisticalAnalyzer:
             "completed_turn_duration_ms": _distribution(completed_durations),
             "time_to_first_token_ms": _distribution(ttfts),
             "token_usage": {
-                **dict(sorted(self.token_totals.items())),
+                **{
+                    name: self.token_totals[name]
+                    for name in (
+                        "input_tokens",
+                        "cached_input_tokens",
+                        "cache_write_input_tokens",
+                        "output_tokens",
+                        "reasoning_output_tokens",
+                        "total_tokens",
+                    )
+                },
                 "per_turn_total_tokens": _distribution(turn_tokens),
             },
             "context_window": {
@@ -740,6 +755,7 @@ class _StatisticalAnalyzer:
                 "tool_requests_per_turn": _distribution(tools_per_turn),
                 "files_per_turn": _distribution(files_per_turn),
             },
+            "hands_on_turn_count": len(hands_on),
             "hands_on_turn_rate_percent": _rate(len(hands_on), len(turns)),
             "completed_after_nonzero_command": {
                 "turns_with_nonzero_command": len(turns_with_failed_commands),
@@ -750,6 +766,7 @@ class _StatisticalAnalyzer:
                 self.command_statuses["zero_exit"],
                 self.command_statuses["zero_exit"] + self.command_statuses["nonzero_exit"],
             ),
+            "repeated_command_execution_count": repeated_commands,
             "exact_command_repeat_rate_percent": _rate(
                 repeated_commands, len(self.commands)
             ),
@@ -769,12 +786,14 @@ class _StatisticalAnalyzer:
                 "later_command_or_file_work": len(web_follow_through),
                 "percent": _rate(len(web_follow_through), len(web_turns)),
             },
+            "revisited_distinct_path_count": revisited_distinct_paths,
             "file_revisit_rate_percent": _rate(
-                sum(count >= 2 for count in self.path_operation_counts.values()),
-                len(self.path_operation_counts),
+                revisited_distinct_paths, len(self.path_operation_counts)
             ),
+            "workspace_tagged_turn_count": workspace_tagged_turns,
+            "turns_in_busiest_workspace_count": turns_in_busiest_workspace,
             "busiest_workspace_turn_share_percent": _rate(
-                max(self.workspaces.values(), default=0), sum(self.workspaces.values())
+                turns_in_busiest_workspace, workspace_tagged_turns
             ),
             "working_rhythm": {
                 "turns_with_hour": sum(hour_counts.values()),
