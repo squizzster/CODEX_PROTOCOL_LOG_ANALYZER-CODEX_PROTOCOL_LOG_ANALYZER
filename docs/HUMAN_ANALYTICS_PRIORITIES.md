@@ -1,7 +1,9 @@
 # Human analytics priorities
 
 **Decision status:** first deterministic statistical slice implemented
-**Audience:** the person whose Codex history is being analyzed  
+
+**Audience:** the person whose Codex history is being analyzed
+
 **Evidence:** [observed rollout event inventory](evidence/2026-08-16-observed-codex-rollout-event-inventory.md)
 
 The analyzer is not for protocol experts who already understand the event stream. It

@@ -1,8 +1,11 @@
 # Preliminary statistical report
 
-**Evidence date:** 2026-08-16  
-**Source:** six copied rollout JSONL files, 75,984 records  
-**Method:** deterministic aggregate analysis; no AI interpretation  
+**Evidence date:** 2026-08-16
+
+**Source:** six copied rollout JSONL files, 75,984 records
+
+**Method:** deterministic aggregate analysis; no AI interpretation
+
 **Privacy:** prompts, responses, commands, output, paths, searches, and URLs omitted
 
 This is the first implemented statistical view of the pressure-test corpus. The

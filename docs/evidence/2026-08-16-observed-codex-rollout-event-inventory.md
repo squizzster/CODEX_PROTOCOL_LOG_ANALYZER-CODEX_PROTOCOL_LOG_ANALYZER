@@ -1,7 +1,9 @@
 # Observed Codex rollout event inventory
 
-**Evidence date:** 2026-08-16  
-**Development mode:** EXP  
+**Evidence date:** 2026-08-16
+
+**Development mode:** EXP
+
 **Corpus:** the three largest rollout JSONL files present in `/home/dna/.codex/sessions`
 when this experiment began, plus the smallest available source for each event missing
 from those files
