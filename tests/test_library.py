@@ -183,6 +183,66 @@ def test_unknown_stat_selection_is_an_error_not_an_exception() -> None:
         assert result.diagnostics[0].code == "unknown_statistic"
 
 
+def test_bulk_and_exact_turn_statistics_share_scoped_session_identity(
+    tmp_path: Path,
+) -> None:
+    first = _write_lines(
+        tmp_path / "first.jsonl",
+        [
+            json.dumps(_record("session_meta", {"id": "session-1"}, 0)),
+            json.dumps(
+                _record("event_msg", {"type": "task_started", "turn_id": "same"}, 1)
+            ),
+        ],
+    )
+    second = _write_lines(
+        tmp_path / "second.jsonl",
+        [
+            json.dumps(_record("session_meta", {"id": "session-2"}, 0)),
+            json.dumps(
+                _record("event_msg", {"type": "task_started", "turn_id": "same"}, 1)
+            ),
+            json.dumps(
+                _record(
+                    "event_msg",
+                    {"type": "task_complete", "turn_id": "same"},
+                    2,
+                )
+            ),
+        ],
+    )
+    with CodexProtocolLibrary() as library:
+        created = library.create_new_codex_protocol_id("user")
+        assert created.value is not None
+        assert library.load_file(created.value, first).value is not None
+        assert library.load_file(created.value, second).value is not None
+
+        aggregate_only = library.get_stats(created.value)
+        assert aggregate_only.value is not None
+        assert aggregate_only.value.turn_statistics == ()
+
+        bulk = library.get_stats(created.value, include_turn_statistics=True)
+        assert bulk.value is not None
+        assert [(turn.session_id, turn.outcome) for turn in bulk.value.turn_statistics] == [
+            ("session-1", "open"),
+            ("session-2", "completed"),
+        ]
+
+        ambiguous = library.get_turn_stats(created.value, "same")
+        assert ambiguous.status == "error"
+        assert ambiguous.value is None
+        assert ambiguous.diagnostics[0].code == "turn_id_ambiguous"
+
+        exact = library.get_turn_stats(created.value, "same", session_id="session-2")
+        assert exact.status == "ok"
+        assert exact.value is not None
+        assert exact.value.outcome == "completed"
+
+        missing = library.get_turn_stats(created.value, "missing")
+        assert missing.status == "error"
+        assert missing.diagnostics[0].code == "turn_id_not_found"
+
+
 def test_statistics_cli_uses_partial_result_for_malformed_json(
     tmp_path: Path, capsys
 ) -> None:

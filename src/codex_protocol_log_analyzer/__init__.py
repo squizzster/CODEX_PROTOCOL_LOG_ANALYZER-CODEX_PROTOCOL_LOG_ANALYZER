@@ -16,10 +16,13 @@ from .library import (
     ProtocolEventInput,
     ProtocolIdNotFoundError,
     StatsSnapshot,
+    TurnIdAmbiguousError,
+    TurnIdNotFoundError,
     UnknownStatisticError,
 )
 from .statistics import (
     StatisticalReport,
+    TurnStatisticalReport,
     analyze_rollout_files,
     analyze_rollout_record_sources,
     render_markdown,
@@ -44,6 +47,9 @@ __all__ = [
     "ProtocolLogDecodeError",
     "StatisticalReport",
     "StatsSnapshot",
+    "TurnIdAmbiguousError",
+    "TurnIdNotFoundError",
+    "TurnStatisticalReport",
     "UnknownStatisticError",
     "analyze_file",
     "analyze_files",

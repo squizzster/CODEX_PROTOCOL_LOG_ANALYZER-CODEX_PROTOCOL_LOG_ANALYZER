@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, Self, TypeVar
 
-from .statistics import analyze_rollout_record_sources
+from .statistics import TurnStatisticalReport, analyze_rollout_record_sources
 
 _KNOWN_ROLLOUT_EVENTS = frozenset(
     {
@@ -82,6 +82,14 @@ class InvalidProtocolLogError(CodexProtocolLibraryError):
 
 class UnknownStatisticError(CodexProtocolLibraryError):
     """A requested statistic is outside the current public vocabulary."""
+
+
+class TurnIdNotFoundError(CodexProtocolLibraryError):
+    """A requested turn identity is absent from the analyzed dataset."""
+
+
+class TurnIdAmbiguousError(CodexProtocolLibraryError):
+    """A turn identity matches more than one Codex session in the dataset."""
 
 
 DiagnosticSeverity = Literal["warning", "error", "fatal"]
@@ -207,6 +215,7 @@ class StatsSnapshot:
     must_have_basic_stats: dict[str, Any]
     recommended_insight_stats: dict[str, Any]
     audit: dict[str, Any]
+    turn_statistics: tuple[TurnStatisticalReport, ...]
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -617,17 +626,52 @@ class _PersistentCodexProtocolStore:
         protocol_id: str,
         *,
         include: Sequence[str] | None = None,
+        include_turn_statistics: bool = False,
     ) -> StatsSnapshot:
         """Calculate a revision-consistent snapshot without changing state."""
         with self._connection:
             self._connection.execute("BEGIN")
-            return self._calculate_stats(protocol_id, include=include)
+            return self._calculate_stats(
+                protocol_id,
+                include=include,
+                include_turn_statistics=include_turn_statistics,
+            )
+
+    def get_turn_stats(
+        self,
+        protocol_id: str,
+        turn_id: str,
+        *,
+        session_id: str | None = None,
+    ) -> TurnStatisticalReport:
+        """Return one turn after analyzing its complete chronological dataset."""
+        normalized_turn_id = _required_text(turn_id, field_name="turn_id")
+        normalized_session_id = (
+            None
+            if session_id is None
+            else _required_text(session_id, field_name="session_id")
+        )
+        snapshot = self.get_stats(protocol_id, include_turn_statistics=True)
+        matches = tuple(
+            turn
+            for turn in snapshot.turn_statistics
+            if turn.turn_id == normalized_turn_id
+            and (normalized_session_id is None or turn.session_id == normalized_session_id)
+        )
+        if not matches:
+            raise TurnIdNotFoundError(f"turn_id not found: {normalized_turn_id}")
+        if len(matches) > 1:
+            raise TurnIdAmbiguousError(
+                f"turn_id matches more than one session: {normalized_turn_id}"
+            )
+        return matches[0]
 
     def _calculate_stats(
         self,
         protocol_id: str,
         *,
         include: Sequence[str] | None,
+        include_turn_statistics: bool,
     ) -> StatsSnapshot:
         dataset = self.get_protocol(protocol_id)
         source_ids = self._connection.execute(
@@ -677,6 +721,7 @@ class _PersistentCodexProtocolStore:
             must_have_basic_stats=basic,
             recommended_insight_stats=insights,
             audit=audit,
+            turn_statistics=(report.turn_statistics if include_turn_statistics else ()),
         )
 
     def _stored_records(self, protocol_id: str, source_id: str) -> Iterable[dict[str, Any]]:
@@ -900,9 +945,31 @@ class CodexProtocolLibrary:
         protocol_id: str,
         *,
         include: Sequence[str] | None = None,
+        include_turn_statistics: bool = False,
     ) -> OperationResult[StatsSnapshot]:
         return self._call(
-            "get_stats", lambda store: store.get_stats(protocol_id, include=include)
+            "get_stats",
+            lambda store: store.get_stats(
+                protocol_id,
+                include=include,
+                include_turn_statistics=include_turn_statistics,
+            ),
+        )
+
+    def get_turn_stats(
+        self,
+        protocol_id: str,
+        turn_id: str,
+        *,
+        session_id: str | None = None,
+    ) -> OperationResult[TurnStatisticalReport]:
+        return self._call(
+            "get_turn_stats",
+            lambda store: store.get_turn_stats(
+                protocol_id,
+                turn_id,
+                session_id=session_id,
+            ),
         )
 
     def _call(
@@ -1122,6 +1189,10 @@ def _exception_diagnostic(
         code = "protocol_id_not_found"
     elif isinstance(error, UnknownStatisticError):
         code = "unknown_statistic"
+    elif isinstance(error, TurnIdNotFoundError):
+        code = "turn_id_not_found"
+    elif isinstance(error, TurnIdAmbiguousError):
+        code = "turn_id_ambiguous"
     elif isinstance(error, FileNotFoundError):
         severity = "fatal"
         code = "source_not_found"

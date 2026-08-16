@@ -208,9 +208,72 @@ def test_mixed_generations_ledgers_tokens_and_privacy(tmp_path: Path) -> None:
     assert basic["workspaces_and_models"]["models"] == {"model-a": 1}
     assert report.audit["token_epochs"] == 3
     assert report.audit["repeated_token_snapshots"] == 1
+    assert [(turn.session_id, turn.turn_id) for turn in report.turn_statistics] == [
+        ("s1", "t1"),
+        ("s2", "t1"),
+    ]
+    completed = report.turn_statistics[0]
+    assert completed.outcome == "completed"
+    assert completed.must_have_basic_stats["token_usage"]["total_tokens"] == 195
+    assert completed.must_have_basic_stats["commands_executed"]["exit_status"] == {
+        "nonzero_exit": 1
+    }
+    assert completed.must_have_basic_stats["model_tool_requests"] == {
+        "count": 1,
+        "output_paired": 1,
+        "by_tool": {"exec": 1},
+    }
+    assert completed.must_have_basic_stats["file_changes"] == {
+        "operations": 1,
+        "distinct_paths": 1,
+        "change_occurrences": 1,
+        "by_type": {"add": 1},
+    }
+    assert completed.recommended_insight_stats["cached_input_share_percent"] == 46.9
+    assert completed.recommended_insight_stats["completed_after_nonzero_command"] is True
     rendered = json.dumps(report.to_dict()) + render_markdown(report)
     assert "secret" not in rendered
     assert "/secret" not in rendered
+
+
+def test_turn_tokens_are_selected_after_the_session_baseline_is_reconciled(
+    tmp_path: Path,
+) -> None:
+    source = _write(
+        tmp_path / "baseline.jsonl",
+        [
+            _record("session_meta", {"id": "session"}, 0),
+            _record("event_msg", _token(100, 80, 20, cached=40), 1),
+            _record("event_msg", {"type": "task_started", "turn_id": "target"}, 2),
+            _record("event_msg", _token(150, 120, 30, cached=70), 3),
+            _record(
+                "event_msg",
+                {
+                    "type": "task_complete",
+                    "turn_id": "target",
+                    "duration_ms": 400,
+                    "time_to_first_token_ms": 25,
+                },
+                4,
+            ),
+        ],
+    )
+
+    turn = analyze_rollout_files([source]).turn_statistics[0]
+
+    assert turn.must_have_basic_stats["token_usage"] == {
+        "input_tokens": 40,
+        "cached_input_tokens": 30,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 10,
+        "reasoning_output_tokens": 0,
+        "total_tokens": 50,
+    }
+    assert turn.must_have_basic_stats["timing"] == {
+        "duration_ms": 400,
+        "time_to_first_token_ms": 25,
+    }
+    assert turn.recommended_insight_stats["cached_input_share_percent"] == 75.0
 
 
 def test_empty_history_renders_na_and_cli_json(tmp_path: Path, capsys) -> None:
