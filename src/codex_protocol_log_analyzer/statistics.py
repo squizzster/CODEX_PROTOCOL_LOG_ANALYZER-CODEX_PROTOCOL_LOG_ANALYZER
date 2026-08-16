@@ -27,12 +27,26 @@ class _Turn:
     ttft_ms: int | None = None
     command_ids: set[str] = field(default_factory=set)
     failed_command_ids: set[str] = field(default_factory=set)
+    command_statuses: Counter[str] = field(default_factory=Counter)
+    command_families: Counter[str] = field(default_factory=Counter)
+    command_durations_ms: list[int] = field(default_factory=list)
     tool_call_ids: set[str] = field(default_factory=set)
+    tool_output_ids: set[str] = field(default_factory=set)
     file_operation_ids: set[str] = field(default_factory=set)
     changed_paths: set[str] = field(default_factory=set)
+    file_change_types: Counter[str] = field(default_factory=Counter)
     web_operation_ids: set[str] = field(default_factory=set)
+    web_action_types: Counter[str] = field(default_factory=Counter)
+    web_query_count: int = 0
+    web_result_count: int = 0
+    web_urls: set[str] = field(default_factory=set)
     collaboration_ids: set[str] = field(default_factory=set)
+    collaboration_tools: Counter[str] = field(default_factory=Counter)
+    agent_thread_ids: set[str] = field(default_factory=set)
+    compaction_ids: set[str] = field(default_factory=set)
+    goal_statuses: Counter[str] = field(default_factory=Counter)
     token_usage: Counter[str] = field(default_factory=Counter)
+    context_observations: list[float] = field(default_factory=list)
     first_edit_sequence: int | None = None
     verification_sequences: list[int] = field(default_factory=list)
     first_web_sequence: int | None = None
@@ -51,6 +65,23 @@ class StatisticalReport:
     must_have_basic_stats: dict[str, Any]
     recommended_insight_stats: dict[str, Any]
     audit: dict[str, Any]
+    turn_statistics: tuple[TurnStatisticalReport, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True, slots=True)
+class TurnStatisticalReport:
+    """Privacy-safe statistics for one turn after full chronological analysis."""
+
+    session_id: str
+    turn_id: str
+    started_at: str | None
+    terminal_at: str | None
+    outcome: str
+    must_have_basic_stats: dict[str, Any]
+    recommended_insight_stats: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -195,13 +226,19 @@ class _StatisticalAnalyzer:
             agent = _text(payload.get("agent_thread_id"))
             if payload.get("kind") == "started" and agent:
                 self.agent_threads.add((session, agent))
+                if turn := self._get_turn(session, turn_id):
+                    turn.agent_thread_ids.add(agent)
         elif record_type == "event_msg" and payload_type == "thread_goal_updated":
             self.goal_updates += 1
             status = _text(_mapping(payload.get("goal")).get("status")) or "unknown"
             self.goal_statuses[status] += 1
+            if turn := self._get_turn(session, turn_id):
+                turn.goal_statuses[status] += 1
         elif record_type == "compacted":
             marker = _text(payload.get("window_id")) or _text(record.get("timestamp"))
             self.compactions.add((session, marker or str(self.sequence)))
+            if turn := self._get_turn(session, turn_id):
+                turn.compaction_ids.add(marker or str(self.sequence))
 
     def _task_started(
         self, session: str, payload: dict[str, Any], record: dict[str, Any]
@@ -284,6 +321,8 @@ class _StatisticalAnalyzer:
                 turn.tool_call_ids.add(call_id)
         elif item_type in {"custom_tool_call_output", "function_call_output"} and call_id:
             self.tool_outputs.add((session, call_id))
+            if turn := self._get_turn(session, turn_id):
+                turn.tool_output_ids.add(call_id)
 
     def _completed_item(
         self, session: str, turn_id: str | None, payload: dict[str, Any]
@@ -304,6 +343,7 @@ class _StatisticalAnalyzer:
                 self.collaboration_tools[tool] += 1
                 if turn := self._get_turn(session, turn_id):
                     turn.collaboration_ids.add(_operation_id(item, str(self.sequence)))
+                    turn.collaboration_tools[tool] += 1
         elif item_type == "McpToolCall":
             self._operation(self.mcp_operations, session, item, "mcp")
 
@@ -330,6 +370,10 @@ class _StatisticalAnalyzer:
             self.command_hashes[command_hash] += 1
         if turn := self._get_turn(session, turn_id):
             turn.command_ids.add(identifier)
+            turn.command_statuses[status] += 1
+            turn.command_families[family] += 1
+            if duration_ms is not None:
+                turn.command_durations_ms.append(duration_ms)
             if status == "nonzero_exit":
                 turn.failed_command_ids.add(identifier)
             if family == "verification":
@@ -357,6 +401,8 @@ class _StatisticalAnalyzer:
             change = _mapping(change_value)
             change_type = _text(change.get("type")) or "unknown"
             self.file_change_types[change_type] += 1
+            if turn:
+                turn.file_change_types[change_type] += 1
             move_path = _text(change.get("move_path"))
             if move_path:
                 move_key = _digest(move_path)
@@ -377,25 +423,38 @@ class _StatisticalAnalyzer:
         )
         self.web_action_types[normalized] += 1
         query = item.get("query")
+        query_count = 0
         if isinstance(query, str) and query:
             self.web_query_count += 1
+            query_count += 1
         queries = item.get("queries")
         if isinstance(queries, list):
-            self.web_query_count += sum(
+            observed_queries = sum(
                 isinstance(value, str) and bool(value) for value in queries
             )
+            self.web_query_count += observed_queries
+            query_count += observed_queries
         results = item.get("results")
+        result_count = 0
+        observed_urls: set[str] = set()
         if isinstance(results, list):
-            self.web_result_count += len(results)
+            result_count = len(results)
+            self.web_result_count += result_count
             for result in results:
                 url = _text(_mapping(result).get("url"))
                 if url:
-                    self.web_urls.add(_digest(url))
+                    observed_urls.add(_digest(url))
+        self.web_urls.update(observed_urls)
         if url := _text(action.get("url")):
+            observed_urls.add(_digest(url))
             self.web_urls.add(_digest(url))
         if turn := self._get_turn(session, turn_id):
             turn.web_operation_ids.add(identifier)
             turn.first_web_sequence = turn.first_web_sequence or self.sequence
+            turn.web_action_types[normalized] += 1
+            turn.web_query_count += query_count
+            turn.web_result_count += result_count
+            turn.web_urls.update(observed_urls)
 
     def _tokens(self, session: str, turn_id: str | None, payload: dict[str, Any]) -> None:
         info = _mapping(payload.get("info"))
@@ -427,6 +486,8 @@ class _StatisticalAnalyzer:
             ratio = total / window
             self.context_observations.append(ratio)
             self.last_context_ratio[session] = ratio
+            if turn := self._get_turn(session, turn_id):
+                turn.context_observations.append(ratio)
 
     def _operation(
         self,
@@ -444,6 +505,122 @@ class _StatisticalAnalyzer:
 
     def _get_turn(self, session: str, turn_id: str | None) -> _Turn | None:
         return self.turns.get((session, turn_id)) if turn_id else None
+
+    def _turn_statistical_report(self, turn: _Turn) -> TurnStatisticalReport:
+        token_usage = {
+            name: turn.token_usage[name]
+            for name in (
+                "input_tokens",
+                "cached_input_tokens",
+                "cache_write_input_tokens",
+                "output_tokens",
+                "reasoning_output_tokens",
+                "total_tokens",
+            )
+        }
+        tool_names = Counter(
+            self.tool_requests[(turn.session, call_id)]
+            for call_id in turn.tool_call_ids
+            if (turn.session, call_id) in self.tool_requests
+        )
+        edited_then_verified = bool(
+            turn.first_edit_sequence is not None
+            and any(
+                sequence > turn.first_edit_sequence
+                for sequence in turn.verification_sequences
+            )
+        )
+        researched_then_worked = bool(
+            turn.first_web_sequence is not None
+            and any(
+                sequence > turn.first_web_sequence for sequence in turn.later_work_sequences
+            )
+        )
+        basic = {
+            "timing": {
+                "duration_ms": turn.duration_ms,
+                "time_to_first_token_ms": turn.ttft_ms,
+            },
+            "token_usage": token_usage,
+            "context_window": {
+                "observation_count": len(turn.context_observations),
+                "high_water_percent": _round_percent(
+                    max(turn.context_observations, default=0)
+                ),
+            },
+            "commands_executed": {
+                "count": len(turn.command_ids),
+                "exit_status": dict(sorted(turn.command_statuses.items())),
+                "duration_ms": _distribution(turn.command_durations_ms),
+                "families": dict(turn.command_families.most_common()),
+            },
+            "model_tool_requests": {
+                "count": len(turn.tool_call_ids),
+                "output_paired": len(turn.tool_call_ids & turn.tool_output_ids),
+                "by_tool": dict(tool_names.most_common()),
+            },
+            "file_changes": {
+                "operations": len(turn.file_operation_ids),
+                "distinct_paths": len(turn.changed_paths),
+                "change_occurrences": sum(turn.file_change_types.values()),
+                "by_type": dict(sorted(turn.file_change_types.items())),
+            },
+            "web_activity": {
+                "operations": len(turn.web_operation_ids),
+                "queries": turn.web_query_count,
+                "result_records": turn.web_result_count,
+                "distinct_result_or_action_urls": len(turn.web_urls),
+                "by_action": dict(sorted(turn.web_action_types.items())),
+            },
+            "collaboration": {
+                "operations": len(turn.collaboration_ids),
+                "agents_started": len(turn.agent_thread_ids),
+                "by_tool": dict(turn.collaboration_tools.most_common()),
+            },
+            "compactions": len(turn.compaction_ids),
+            "workspace_and_model": {
+                "workspace_digest": turn.workspace,
+                "model": turn.model,
+                "local_start_hour": turn.local_hour,
+            },
+        }
+        insights = {
+            "hands_on": bool(
+                turn.command_ids
+                or turn.tool_call_ids
+                or turn.file_operation_ids
+                or turn.web_operation_ids
+                or turn.collaboration_ids
+            ),
+            "completed_after_nonzero_command": bool(
+                turn.failed_command_ids and turn.outcome == "completed"
+            ),
+            "cached_input_share_percent": _rate(
+                turn.token_usage["cached_input_tokens"],
+                turn.token_usage["input_tokens"],
+            ),
+            "reasoning_output_share_percent": _rate(
+                turn.token_usage["reasoning_output_tokens"],
+                turn.token_usage["output_tokens"],
+            ),
+            "edited_then_verified": edited_then_verified,
+            "web_research_followed_by_command_or_file_work": researched_then_worked,
+            "goal_tracking": {
+                "updates": sum(turn.goal_statuses.values()),
+                "statuses": dict(sorted(turn.goal_statuses.items())),
+            },
+        }
+        return TurnStatisticalReport(
+            session_id=turn.session,
+            turn_id=turn.turn_id,
+            started_at=(None if turn.started_at is None else turn.started_at.isoformat()),
+            terminal_at=(
+                None if turn.terminal_at is None else turn.terminal_at.isoformat()
+            ),
+            outcome=turn.outcome or "open",
+            must_have_basic_stats=basic,
+            recommended_insight_stats=insights,
+        )
 
     def report(self, *, source: str) -> StatisticalReport:
         turns = list(self.turns.values())
@@ -642,7 +819,18 @@ class _StatisticalAnalyzer:
                 "elapsed duration is not active human time or time saved",
             ],
         }
-        return StatisticalReport(source, basic, insights, audit)
+        turn_statistics = tuple(
+            self._turn_statistical_report(turn)
+            for turn in sorted(
+                turns,
+                key=lambda item: (
+                    item.session,
+                    "" if item.started_at is None else item.started_at.isoformat(),
+                    item.turn_id,
+                ),
+            )
+        )
+        return StatisticalReport(source, basic, insights, audit, turn_statistics)
 
 
 def render_markdown(report: StatisticalReport) -> str:

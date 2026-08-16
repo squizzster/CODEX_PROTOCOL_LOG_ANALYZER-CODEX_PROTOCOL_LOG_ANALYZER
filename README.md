@@ -44,9 +44,14 @@ with CodexProtocolLibrary("runtime/codex.sqlite3") as library:
         protocol_id = created.value
         loaded = library.load_file(protocol_id, "rollout.jsonl")
         current = library.get_stats(protocol_id, include=["turns", "token_usage"])
+        bulk = library.get_stats(protocol_id, include_turn_statistics=True)
+        exact = library.get_turn_stats(
+            protocol_id, "turn-id", session_id="codex-session-id"
+        )
 
         print(loaded.status, loaded.diagnostics)
         print(current.value.to_dict() if current.value else current.diagnostics)
+        print(exact.value.to_dict() if exact.value else exact.diagnostics)
     else:
         print(created.status, created.diagnostics)
 ```
@@ -61,6 +66,8 @@ IDs that were started but had no terminal event before the capture ended.
 ledgers over persisted rollout files. It reports deterministic human statistics while
 omitting prompts, responses, commands, output, paths, searches, and URLs. Token usage is
 derived from cumulative per-session snapshots rather than summing snapshot records.
+Session aggregates and keyed turn projections come from the same chronological pass, so
+an exact turn retains the token baseline established before that turn began.
 
 `CodexProtocolLibrary` persists user-owned analysis IDs, idempotent file sources, and
 named chronological event streams in SQLite. Every public operation returns an
