@@ -67,7 +67,10 @@ ledgers over persisted rollout files. It reports deterministic human statistics 
 omitting prompts, responses, commands, output, paths, searches, and URLs. Token usage is
 derived from cumulative per-session snapshots rather than summing snapshot records.
 Session aggregates and keyed turn projections come from the same chronological pass, so
-an exact turn retains the token baseline established before that turn began.
+an exact turn retains the token baseline established before that turn began. Model and
+reasoning effort are independent, nullable facts taken from that turn's effective
+`turn_context`; aggregate model and effort counts are derived from the finalized turn
+ledger rather than from thread-level settings or token behavior.
 
 `CodexProtocolLibrary` persists user-owned analysis IDs, idempotent file sources, and
 named chronological event streams in SQLite. Every public operation returns an

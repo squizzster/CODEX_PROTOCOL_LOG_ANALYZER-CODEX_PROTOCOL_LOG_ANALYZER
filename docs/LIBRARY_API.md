@@ -76,6 +76,12 @@ The lifecycle methods are:
 One library instance owns one SQLite connection. Create one instance per application
 thread; multiple instances may use the same database path.
 
+Each exact turn projection carries its nullable `model` and `reasoning_effort` from
+`turn_context`. They remain separate turn-scoped facts: neither is inferred from token
+usage or a later thread setting. Aggregate `models` and `reasoning_efforts` maps are
+recomputed from the finalized exact-turn ledger, so a repeated context record replaces
+that turn's prior values without leaving stale or zero-count aggregate entries.
+
 The SQLite database stores complete source events so statistics can be recalculated as
 the analyzer evolves. Those events can contain prompts, responses, paths, commands, and
 tool output. Treat the database as sensitive application data and apply the same access,
