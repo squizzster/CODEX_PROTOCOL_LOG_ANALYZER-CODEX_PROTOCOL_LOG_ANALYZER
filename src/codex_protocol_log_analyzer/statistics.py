@@ -53,6 +53,7 @@ class _Turn:
     later_work_sequences: list[int] = field(default_factory=list)
     workspace: str | None = None
     model: str | None = None
+    reasoning_effort: str | None = None
     local_hour: int | None = None
     timezone: str | None = None
 
@@ -140,8 +141,6 @@ class _StatisticalAnalyzer:
         self.token_repeated_snapshots = 0
         self.context_observations: list[float] = []
         self.last_context_ratio: dict[str, float] = {}
-        self.workspaces: Counter[str] = Counter()
-        self.models: Counter[str] = Counter()
         self.goal_updates = 0
         self.goal_statuses: Counter[str] = Counter()
         self.malformed_lines = 0
@@ -285,18 +284,13 @@ class _StatisticalAnalyzer:
             return
         cwd = _text(payload.get("cwd"))
         if cwd:
-            workspace = _digest(cwd)
-            if turn.workspace != workspace:
-                if turn.workspace:
-                    self.workspaces[turn.workspace] -= 1
-                turn.workspace = workspace
-                self.workspaces[workspace] += 1
+            turn.workspace = _digest(cwd)
         model = _text(payload.get("model"))
-        if model and turn.model != model:
-            if turn.model:
-                self.models[turn.model] -= 1
+        if model:
             turn.model = model
-            self.models[model] += 1
+        reasoning_effort = _text(payload.get("effort"))
+        if reasoning_effort:
+            turn.reasoning_effort = reasoning_effort
         timezone = _text(payload.get("timezone"))
         if timezone:
             turn.timezone = timezone
@@ -581,6 +575,7 @@ class _StatisticalAnalyzer:
             "workspace_and_model": {
                 "workspace_digest": turn.workspace,
                 "model": turn.model,
+                "reasoning_effort": turn.reasoning_effort,
                 "local_start_hour": turn.local_hour,
             },
         }
@@ -624,6 +619,11 @@ class _StatisticalAnalyzer:
 
     def report(self, *, source: str) -> StatisticalReport:
         turns = list(self.turns.values())
+        workspaces = Counter(turn.workspace for turn in turns if turn.workspace is not None)
+        models = Counter(turn.model for turn in turns if turn.model is not None)
+        reasoning_efforts = Counter(
+            turn.reasoning_effort for turn in turns if turn.reasoning_effort is not None
+        )
         completed = [turn for turn in turns if turn.outcome == "completed"]
         aborted = [turn for turn in turns if turn.outcome == "aborted"]
         open_turns = [turn for turn in turns if turn.outcome is None]
@@ -669,8 +669,8 @@ class _StatisticalAnalyzer:
         revisited_distinct_paths = sum(
             count >= 2 for count in self.path_operation_counts.values()
         )
-        workspace_tagged_turns = sum(self.workspaces.values())
-        turns_in_busiest_workspace = max(self.workspaces.values(), default=0)
+        workspace_tagged_turns = sum(workspaces.values())
+        turns_in_busiest_workspace = max(workspaces.values(), default=0)
         input_tokens = self.token_totals["input_tokens"]
         output_tokens = self.token_totals["output_tokens"]
         hour_counts = Counter(
@@ -744,8 +744,9 @@ class _StatisticalAnalyzer:
             },
             "compactions": len(self.compactions),
             "workspaces_and_models": {
-                "distinct_workspaces": len(self.workspaces),
-                "models": dict(self.models.most_common()),
+                "distinct_workspaces": len(workspaces),
+                "models": dict(models.most_common()),
+                "reasoning_efforts": dict(reasoning_efforts.most_common()),
             },
         }
         insights = {
@@ -912,8 +913,10 @@ def render_markdown(report: StatisticalReport) -> str:
         f"11. **Collaboration:** {collab['operations']:,} completed operations; "
         f"{collab['agents_started']:,} agent threads started.",
         f"12. **Compactions:** {basic['compactions']:,} context-window compactions.",
-        f"13. **Workspaces and models:** {work['distinct_workspaces']:,} workspaces; "
-        f"{_counts_text(work['models'])}.",
+        f"13. **Workspaces and model settings:** "
+        f"{work['distinct_workspaces']:,} workspaces; "
+        f"models: {_counts_text(work['models'])}; reasoning efforts: "
+        f"{_counts_text(work['reasoning_efforts'])}.",
         "",
         "## RECOMMENDED INSIGHT STATS",
         "",

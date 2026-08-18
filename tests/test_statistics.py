@@ -57,6 +57,7 @@ def test_mixed_generations_ledgers_tokens_and_privacy(tmp_path: Path) -> None:
                     "turn_id": "t1",
                     "cwd": "/secret/workspace",
                     "model": "model-a",
+                    "effort": "xhigh",
                     "timezone": "Etc/UTC",
                 },
                 2,
@@ -67,6 +68,7 @@ def test_mixed_generations_ledgers_tokens_and_privacy(tmp_path: Path) -> None:
                     "turn_id": "t1",
                     "cwd": "/secret/workspace",
                     "model": "model-a",
+                    "effort": "xhigh",
                     "timezone": "Etc/UTC",
                 },
                 3,
@@ -206,6 +208,7 @@ def test_mixed_generations_ledgers_tokens_and_privacy(tmp_path: Path) -> None:
     assert basic["collaboration"]["operations"] == 1
     assert basic["compactions"] == 1
     assert basic["workspaces_and_models"]["models"] == {"model-a": 1}
+    assert basic["workspaces_and_models"]["reasoning_efforts"] == {"xhigh": 1}
     assert report.audit["token_epochs"] == 3
     assert report.audit["repeated_token_snapshots"] == 1
     assert [(turn.session_id, turn.turn_id) for turn in report.turn_statistics] == [
@@ -231,6 +234,10 @@ def test_mixed_generations_ledgers_tokens_and_privacy(tmp_path: Path) -> None:
     }
     assert completed.recommended_insight_stats["cached_input_share_percent"] == 46.9
     assert completed.recommended_insight_stats["completed_after_nonzero_command"] is True
+    turn_context = completed.must_have_basic_stats["workspace_and_model"]
+    assert turn_context["model"] == "model-a"
+    assert turn_context["reasoning_effort"] == "xhigh"
+    assert turn_context["local_start_hour"] == 10
     rendered = json.dumps(report.to_dict()) + render_markdown(report)
     assert "secret" not in rendered
     assert "/secret" not in rendered
@@ -357,6 +364,63 @@ def test_insight_rates_include_their_relational_base_counts(tmp_path: Path) -> N
     assert insights["workspace_tagged_turn_count"] == 3
     assert insights["turns_in_busiest_workspace_count"] == 2
     assert insights["busiest_workspace_turn_share_percent"] == 66.7
+
+
+def test_final_turn_context_owns_workspace_model_and_reasoning_effort(
+    tmp_path: Path,
+) -> None:
+    source = _write(
+        tmp_path / "turn-context.jsonl",
+        [
+            _record("session_meta", {"id": "session"}, 0),
+            _record("event_msg", {"type": "task_started", "turn_id": "t1"}, 1),
+            _record(
+                "turn_context",
+                {
+                    "turn_id": "t1",
+                    "cwd": "/workspace/old",
+                    "model": "model-old",
+                    "effort": "medium",
+                },
+                2,
+            ),
+            _record(
+                "turn_context",
+                {
+                    "turn_id": "t1",
+                    "cwd": "/workspace/current",
+                    "model": "model-current",
+                    "effort": "xhigh",
+                },
+                3,
+            ),
+            _record("event_msg", {"type": "task_complete", "turn_id": "t1"}, 4),
+            _record("event_msg", {"type": "task_started", "turn_id": "t2"}, 5),
+            _record(
+                "turn_context",
+                {
+                    "turn_id": "t2",
+                    "cwd": "/workspace/current",
+                    "model": "model-current",
+                    "effort": 3,
+                },
+                6,
+            ),
+            _record("event_msg", {"type": "task_complete", "turn_id": "t2"}, 7),
+        ],
+    )
+
+    report = analyze_rollout_files([source])
+    work = report.must_have_basic_stats["workspaces_and_models"]
+
+    assert work["distinct_workspaces"] == 1
+    assert work["models"] == {"model-current": 2}
+    assert work["reasoning_efforts"] == {"xhigh": 1}
+    first, second = report.turn_statistics
+    assert first.must_have_basic_stats["workspace_and_model"]["reasoning_effort"] == (
+        "xhigh"
+    )
+    assert second.must_have_basic_stats["workspace_and_model"]["reasoning_effort"] is None
 
 
 def test_empty_history_renders_na_and_cli_json(tmp_path: Path, capsys) -> None:
