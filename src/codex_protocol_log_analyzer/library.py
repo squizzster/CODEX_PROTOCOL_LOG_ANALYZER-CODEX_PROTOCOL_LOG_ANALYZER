@@ -11,7 +11,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, Self, TypeVar
+from typing import Any, Generic, Literal, Self, TypeVar
 
 from .statistics import TurnStatisticalReport, analyze_rollout_record_sources
 
@@ -113,7 +113,7 @@ class LibraryDiagnostic:
 
 
 @dataclass(frozen=True, slots=True)
-class OperationResult[ResultValue]:
+class OperationResult(Generic[ResultValue]):
     """Stable no-crash boundary for every public application operation."""
 
     status: ResultStatus

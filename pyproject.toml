@@ -6,7 +6,7 @@ readme = "README.md"
 authors = [
     { name = "Mark", email = "squizzster@gmail.com" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = []
 
 [project.scripts]
@@ -26,7 +26,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 92
-target-version = "py312"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
